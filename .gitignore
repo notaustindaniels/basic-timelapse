@@ -1,0 +1,33 @@
+# Secrets
+.env
+
+# Generated artifacts
+runs/
+*.mp4
+*.png
+!examples/**/*.png
+!examples/**/*.mp4
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
