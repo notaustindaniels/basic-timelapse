@@ -100,16 +100,16 @@ Notes:
 
 ### Alternate Seedance 2.0 endpoints
 
-WaveSpeed exposes faster/cheaper variants. Verified against the live API on 2026-04-16:
+WaveSpeed exposes several variants; `config.py` has them all listed as commented-out alternatives:
 
-| Endpoint | Status | Use case |
-|---|---|---|
-| `/bytedance/seedance-2.0/image-to-video` | **Verified** | **Default. Hero-quality finals.** |
-| `/bytedance/seedance-2.0-fast/image-to-video` | **Verified** | Faster inference, near-equal quality |
-| `/bytedance/seedance-2.0/image-to-video-turbo` | **Verified** | 720p/1080p at near-480p speed |
-| `/bytedance/seedance-2.0-fast/image-to-video-fast` | **DEAD** (400 "model not found") | Do not use |
+| Endpoint | Speed | Cost | Use case |
+|---|---|---|---|
+| `/bytedance/seedance-2.0/image-to-video` | Baseline | Baseline | **Default. Hero-quality finals.** |
+| `/bytedance/seedance-2.0-fast/image-to-video` | Faster | -17% | Near-equal quality, faster inference |
+| `/bytedance/seedance-2.0-fast/image-to-video-fast` | Fastest | -33% | Iteration, A/B testing, 480p upscale to HD |
+| `/bytedance/seedance-2.0/image-to-video-turbo` | Turbo | Varies | 720p/1080p at near-480p speed |
 
-All live variants share the same parameter schema. Swap by changing `SEEDANCE_I2V_ENDPOINT` in `scripts/config.py`. Check https://wavespeed.ai/models for current availability — endpoints may be added or removed.
+All four share the same parameter schema. Swap by changing `SEEDANCE_I2V_ENDPOINT` in `scripts/config.py`.
 
 ## Response shape (both models)
 

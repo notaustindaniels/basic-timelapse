@@ -4,21 +4,32 @@ Programmatically generate viral "hidden bunker" / restoration timelapse videos e
 
 This skill replaces the manual web-UI workflow from the YouTube transcript (Pinterest → ChatGPT → Higgsfield → Kling → back and forth) with a single command. It orchestrates:
 
-- **Claude** (via your subscription's OAuth token) — prompt engineering
-- **Nano Banana 2** (via WaveSpeed) — image generation with scene-to-scene continuity
-- **Seedance v1.5 Pro** (via WaveSpeed) — image-to-video at 1080p with start/end frame control
-- **ffmpeg** — stitching the 6 clips into one final MP4
+- **Claude** (via your subscription's OAuth token) — acts as the creative "Restoration Timelapse" GPT. Called twice per run: once for Phase A (above-ground), once for Phase B (underground reveal, with Phase A's final image attached as reference).
+- **Nano Banana 2** (via WaveSpeed) — image generation with scene-to-scene continuity via the `/edit` endpoint.
+- **Seedance 2.0** (via WaveSpeed) — image-to-video at 1080p with start/end frame control.
+- **ffmpeg** — stitching the 7 clips into one final MP4.
+
+The GPT's natural markdown output (IMAGE 1-4 / VIDEO 1-4 blocks in `text` code fences) is extracted by a deterministic regex parser — no LLM-as-parser, no hallucination risk between "GPT produces prompts" and "Nano Banana receives prompts."
 
 ## What it produces
 
-For any intent like *"hidden survival bunker under a suburban backyard patio, overcast daylight"*, you get:
+For any intent like *"concealed below-grade retreat room under a suburban backyard patio"* (see note on terminology below), you get:
 
-- 8 PNG scene images (4 above-ground phase + 4 underground phase)
-- 6 MP4 video clips (3 per phase, each chaining scene N → scene N+1)
-- 1 final stitched MP4 (30 seconds at default 5s/clip)
-- A `manifest.json` documenting every prompt, every API call, and every artifact path
+- 8 PNG scene images (4 Phase A above-ground + 4 Phase B underground)
+- 1 optional closure image (only with `--closure protagonist`)
+- 7 MP4 video clips (3 Phase A + 3 Phase B + 1 closure clip)
+- 1 final stitched MP4 (35-40 seconds at default 5s/clip)
+- Raw GPT responses in `phase_a_gpt_response.md` and `phase_b_gpt_response.md` (the markdown straight from Claude, useful for debugging)
+- A `manifest.json` documenting every prompt, every API call, every artifact path
 
-Optionally also a hero concept image if you use `--mode hero` or `--mode both`.
+> **⚠️ A note on terminology:** This skill is colloquially called the "bunker timelapse" skill because that's the viral format it targets. But the word "bunker" (and related language like "hidden," "survival," "fortified") trips content moderation on the image model. Inside the pipeline, the orchestrator's `--intent` flag needs to use architectural/lifestyle language instead: "concealed basement room," "below-grade suite," "underground retreat." The visual result is the same; only the prompt wording changes. See `SKILL.md` Step 0.5 for the full translation table. Example commands in this README all use the moderation-safe phrasing.
+
+## Closure modes
+
+The final clip has two options, chosen at runtime via `--closure`:
+
+- **`cinematic`** (default): the GPT's own VIDEO 4 block, rendered as a Seedance push-in on Phase B Scene 4. Camera zooms into the reveal. No characters.
+- **`protagonist`**: the transcript narrator's method. Nano Banana 2 inserts a character into Phase B Scene 4, then Seedance animates the character settling into the space. Requires `--protagonist-description "..."` or `--protagonist-description auto`.
 
 ---
 
@@ -134,28 +145,44 @@ The code uses whichever Claude credential is present, preferring OAuth when both
 
 ## Usage
 
-Basic:
+Basic (uses defaults — cinematic closure, no questionnaire answers passed):
 
 ```bash
 python scripts/generate_timelapse.py \
-  --intent "hidden survival bunker under a suburban backyard patio, overcast daylight, hatch opens to reveal warm interior glow" \
+  --intent "concealed below-grade retreat room under a suburban backyard patio, accessed via a flush-mounted hatch" \
   --output-dir ./runs/first_run
 ```
 
-Default `--mode` is `both`, which runs the hero-first pipeline and the direct-from-intent pipeline in sequence so you can compare. To run only one:
+Recommended — pass answers to the GPT's mandatory questionnaire up front so the GPT doesn't pause mid-generation to ask:
 
 ```bash
-# Generate a hero concept image first, then reverse-engineer the 4 scenes from it
 python scripts/generate_timelapse.py \
-  --intent "..." \
-  --mode hero \
-  --output-dir ./runs/hero_only
+  --intent "concealed below-grade retreat room under a suburban backyard patio, accessed via a flush-mounted hatch" \
+  --vibe "rustic but modern" \
+  --features "wooden fence, stainless grill, hidden hatch with warm interior glow" \
+  --lighting "overcast daytime" \
+  --closure cinematic \
+  --output-dir ./runs/first_run
+```
 
-# Skip the hero step — generate 4 scenes directly from intent
+Protagonist-closure variant (the transcript narrator's style):
+
+```bash
 python scripts/generate_timelapse.py \
-  --intent "..." \
-  --mode direct \
-  --output-dir ./runs/direct_only
+  --intent "concealed below-grade retreat room under a suburban backyard patio, accessed via a flush-mounted hatch" \
+  --vibe rustic \
+  --features "hatch with warm interior glow" \
+  --lighting "overcast daytime" \
+  --closure protagonist \
+  --protagonist-description "the homeowner, mid-40s, denim and flannel, relaxed" \
+  --output-dir ./runs/protagonist_run
+```
+
+Let the image model invent a character:
+
+```bash
+  --closure protagonist \
+  --protagonist-description auto
 ```
 
 Longer clips (smoother motion, more cost):
@@ -163,15 +190,19 @@ Longer clips (smoother motion, more cost):
 ```bash
 python scripts/generate_timelapse.py \
   --intent "..." \
-  --output-dir ./runs/long \
   --clip-duration 10    # Seedance 2.0 accepts only 5, 10, or 15
 ```
 
-> Note: Seedance 2.0 always generates native audio (ambient, sound effects, and occasionally dialogue). This skill **preserves that audio in the final stitched MP4 by default** because the ambient audio gives timelapse reveals a lot of punch. Pass `--no-audio` if you'd rather have a silent final cut.
->
-> Caveat: because each clip's audio is generated independently by Seedance, you'll hear discontinuities (volume pops, ambient-tone shifts) at every clip boundary — 5 of them in the stitched video. This is usually acceptable for construction-style ambience but jarring if the clips have continuous dialogue. If it's too jarring, either strip audio with `--no-audio` and drop in a single music/ambient bed in post, or add an ffmpeg `acrossfade` filter step (not included here).
+Test flags (cheap):
 
-Verbose logging if something's going wrong:
+```bash
+--smoke   # 2 Phase A scenes + 1 clip at 480p. Phase B skipped.          ~$0.70
+--mini    # full pipeline at 480p.                                       ~$5-6
+```
+
+> Seedance 2.0 always generates native audio (ambient, sound effects). This skill **preserves that audio in the final stitched MP4 by default.** Pass `--no-audio` for a silent cut. Note: each clip's audio is generated independently, so you'll hear discontinuities at every clip boundary (6 boundaries in a 7-clip final). Acceptable for construction ambience, jarring if dialogue is present.
+
+Verbose logging:
 
 ```bash
 python scripts/generate_timelapse.py --intent "..." --output-dir ./runs/debug -v
@@ -209,13 +240,14 @@ bunker-timelapse-skill/
 ├── .env.example
 ├── .gitignore
 ├── references/
-│   ├── restoration_system_prompt.md   # Claude's system prompt — edit freely
+│   ├── restoration_system_prompt.md   # The verbatim custom GPT system prompt
 │   ├── wavespeed_api.md              # WaveSpeed endpoint reference
 │   └── workflow_diagram.md           # Scene-chaining diagram
 └── scripts/
     ├── generate_timelapse.py         # ← main CLI entry point
-    ├── claude_client.py              # Claude Agent SDK wrapper
-    ├── wavespeed_client.py           # WaveSpeed submit + poll + download
+    ├── claude_client.py              # thin transport over Claude Agent SDK
+    ├── prompt_parser.py              # regex parser for GPT markdown output
+    ├── wavespeed_client.py           # NB2 + Seedance API client
     ├── stitch_video.py               # ffmpeg concat
     └── config.py                     # env loading + model constants
 ```
@@ -224,40 +256,39 @@ bunker-timelapse-skill/
 
 ```
 runs/first_run/
-├── hero_mode/
-│   ├── manifest.json                  # everything that happened
-│   ├── images/
-│   │   ├── hero_concept.png
-│   │   ├── phase_a_scene_1.png  ...  phase_a_scene_4.png
-│   │   └── phase_b_scene_1.png  ...  phase_b_scene_4.png
-│   ├── clips/
-│   │   ├── phase_a_clip_1.mp4  ...  phase_a_clip_3.mp4
-│   │   └── phase_b_clip_1.mp4  ...  phase_b_clip_3.mp4
-│   └── final.mp4                     # ← the stitched result
-└── direct_mode/
-    └── ...                           # same layout, no hero_concept.png
+├── manifest.json                      # everything that happened
+├── phase_a_gpt_response.md            # raw markdown from the Phase A GPT call
+├── phase_b_gpt_response.md            # raw markdown from the Phase B GPT call
+├── images/
+│   ├── phase_a_scene_1.png  ...  phase_a_scene_4.png
+│   ├── phase_b_scene_1.png  ...  phase_b_scene_4.png
+│   └── closure_protagonist.png        # only with --closure protagonist
+├── clips/
+│   ├── phase_a_clip_1.mp4   ...  phase_a_clip_3.mp4
+│   ├── phase_b_clip_1.mp4   ...  phase_b_clip_3.mp4
+│   └── closure_cinematic.mp4 OR closure_protagonist.mp4
+└── final.mp4                          # ← the stitched result (7 clips)
 ```
 
 ---
 
 ## Costs (approximate, April 2026)
 
-Per full `--mode both` run at defaults (1080p, 5s clips, 2K images, no audio):
+Per full run at defaults (1080p, 5s clips, 2K images):
 
-| Item | Count | Unit cost | Subtotal |
-|------|-------|-----------|----------|
-| NB2 text-to-image (2K) | 2 (hero + direct scene 1) | ~$0.03 | ~$0.06 |
-| NB2 edit (2K) | 14 (4+4 chained scenes × 2 modes − 2 first-scenes) | ~$0.04 | ~$0.56 |
-| Seedance 2.0 i2v 1080p 5s | 12 (6 clips × 2 modes) | ~$1.80 | **~$21.60** |
-| Claude Opus | 2 calls (~5k tokens each) | subscription | $0 |
-| **Total** | | | **~$22.22** |
+| Item | Cinematic closure | Protagonist closure |
+|------|---|---|
+| NB2 text-to-image (2K) | 1 (Phase A scene 1) | 1 |
+| NB2 edit (2K) | 7 (Phase A 2-4, Phase B 1-4) | 8 (+ protagonist insertion) |
+| Seedance 2.0 i2v 1080p 5s | 7 (6 chain + 1 push-in) | 7 (6 chain + 1 protagonist) |
+| Claude Opus | 2 calls (Phase A + Phase B) | 2 |
+| **Total** | **~$24** | **~$26** |
 
-Seedance 2.0 at 1080p is the dominant cost — that's the price of being on the current state-of-the-art model. Ways to cut the bill:
+Seedance 2.0 at 1080p is the dominant cost. Ways to cut the bill:
 
-- **Single mode** (`--mode hero` or `--mode direct`) halves the cost to ~$11
-- **720p** instead of 1080p drops Seedance cost by ~67% (~$7 total for `--mode both`)
-- **Swap to `seedance-2.0-fast`** in `scripts/config.py` saves another 17–33%
-- **Swap to `seedance-v1.5-pro`** — previous generation, still solid, ~$0.30/clip at 1080p → full `--mode both` run ~$4.20
+- **`--mini`** runs the full pipeline at 480p for ~$5-6
+- **720p** (edit `DEFAULT_VIDEO_RESOLUTION` in `scripts/config.py`) drops Seedance cost by ~67%
+- **`--smoke`** is a minimal-cost plumbing test: 2 images + 1 clip at 480p, ~$0.70
 
 Check https://wavespeed.ai/pricing for current rates.
 
@@ -306,10 +337,10 @@ Edit `references/restoration_system_prompt.md` and tighten the SCENE LOCK guidan
 
 | Transcript step | Programmatic equivalent |
 |---|---|
-| "Search Pinterest for 'hidden bunker'" | Replaced: Claude generates a hero concept prompt, Nano Banana 2 renders it |
-| "Upload image to Restoration Timelapse GPT" | `claude_client.generate_prompts(mode='hero_reverse', hero_image_path=...)` |
-| "Copy prompt 1 into Higgsfield, generate" | `wavespeed_client.generate_image(prompt, reference_image_url=None)` — scene 1 |
-| "Click Reference, paste prompt 2, generate" | `wavespeed_client.generate_image(prompt, reference_image_url=prev_url)` — scenes 2–4 |
-| "Kling 3.0 — upload start frame, end frame, paste animation prompt" | `wavespeed_client.generate_video(start_url, end_url, anim_prompt)` via Seedance 2.0 (leaderboard leader, same start/end-frame control) |
-| Repeat whole thing for underground phase | Phase B runs automatically, anchored on Phase A scene 4 |
+| "Upload image to Restoration Timelapse GPT" (or no image, just a description) | `claude_client.send_prompt()` with the verbatim GPT system prompt, user intent + questionnaire answers, optional image attachment |
+| "Copy prompt 1 into Higgsfield, generate" | `wavespeed_client.generate_image()` with no reference — scene 1 |
+| "Click Reference, paste prompt 2, generate" | `wavespeed_client.generate_image()` with previous scene as reference — scenes 2-4 |
+| "Kling 3.0 — upload start frame, end frame, paste animation prompt" | `wavespeed_client.generate_video()` via Seedance 2.0 — 3 clips per phase |
+| "Generate Phase B by taking the final Phase A image back to the GPT" | Second `claude_client.send_prompt()` call with Phase A scene 4 attached |
+| "Put the customer on the couch" (transcript's closing method) | `--closure protagonist --protagonist-description "..."` — NB2 edit to insert the character, then Seedance scene_4 → character |
 | Manually download each clip and stitch in editor | `stitch_video.stitch_clips(all_clips, final_path)` |

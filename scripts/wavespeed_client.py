@@ -192,6 +192,11 @@ def generate_image(
         payload = {
             "prompt": prompt,
             "images": [reference_image_url],
+            # IMPORTANT: send aspect_ratio here too. Early versions of this
+            # client omitted it on the edit branch and the resulting images
+            # drifted to a different aspect ratio than scene 1, cascading
+            # through the whole scene chain. Keep it explicit.
+            "aspect_ratio": aspect_ratio,
             "resolution": resolution,
             "output_format": output_format,
             "enable_sync_mode": False,
@@ -288,5 +293,55 @@ def generate_video(
     )
     remote_url = output_urls[0]
     log.info("Video ready: %s — downloading", remote_url)
+    _download(remote_url, output_path)
+    return output_path, remote_url
+
+
+def generate_video_push_in(
+    start_image_url: str,
+    prompt: str,
+    output_path: Path,
+    *,
+    duration: int = DEFAULT_CLIP_DURATION,
+    resolution: str = DEFAULT_VIDEO_RESOLUTION,
+    camera_fixed: bool = False,  # push-in IS camera motion, so don't lock it
+) -> tuple[Path, str]:
+    """
+    Generate a single-frame video clip — used for the cinematic "hero push-in"
+    closure. Unlike generate_video(), this omits `last_image`, letting Seedance
+    animate motion outward from one still.
+
+    The push-in effect comes from the prompt itself ("slow digital push-in",
+    "gradual zoom toward...") — Seedance 2.0's director-level camera control
+    handles it through natural language.
+
+    Returns (local_path, remote_url).
+    """
+    if camera_fixed and "locked" not in prompt.lower() and "static" not in prompt.lower():
+        prompt = f"Locked-off static tripod camera, no camera movement. {prompt}"
+
+    payload: dict[str, Any] = {
+        "image": start_image_url,
+        # NB: no `last_image` — that's what makes this the push-in variant.
+        "prompt": prompt,
+        "duration": duration,
+        "resolution": resolution,
+    }
+
+    log.info(
+        "Submitting push-in video gen: duration=%ds res=%s (no last_image)",
+        duration, resolution,
+    )
+    submit = _post_with_retry(WAVESPEED_BASE_URL + SEEDANCE_I2V_ENDPOINT, payload)
+    request_id = submit["data"]["id"]
+    log.info("Submitted push-in request %s, polling", request_id)
+
+    output_urls = _poll_until_done(
+        request_id,
+        poll_interval=VIDEO_POLL_INTERVAL_SEC,
+        timeout_sec=VIDEO_POLL_TIMEOUT_SEC,
+    )
+    remote_url = output_urls[0]
+    log.info("Push-in video ready: %s — downloading", remote_url)
     _download(remote_url, output_path)
     return output_path, remote_url

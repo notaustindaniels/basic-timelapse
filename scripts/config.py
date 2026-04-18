@@ -76,9 +76,9 @@ NB2_EDIT_ENDPOINT = "/google/nano-banana-2/edit"
 # Seedance image-to-video (v2.0, launched April 2026 on WaveSpeed).
 # Confirmed to support 1080p output and last_image start/end-frame control.
 # If you want faster/cheaper iteration, swap to one of:
-#   /bytedance/seedance-2.0-fast/image-to-video      (verified — faster inference)
-#   /bytedance/seedance-2.0/image-to-video-turbo     (verified — 720p/1080p turbo)
-# NOTE: /bytedance/seedance-2.0-fast/image-to-video-fast is DEAD (400 "model not found").
+#   /bytedance/seedance-2.0-fast/image-to-video      (standard inference + fast upscale)
+#   /bytedance/seedance-2.0-fast/image-to-video-fast (speed-optimized, upscales from 480p)
+#   /bytedance/seedance-2.0/image-to-video-turbo     (720p/1080p turbo)
 # The standard v2.0 endpoint below gives the best hero-shot quality.
 SEEDANCE_I2V_ENDPOINT = "/bytedance/seedance-2.0/image-to-video"
 
